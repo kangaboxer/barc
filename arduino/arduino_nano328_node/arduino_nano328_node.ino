@@ -11,7 +11,6 @@
 # Kiet Lam (kiet.lam@berkeley.edu)
 # --------------------------------------------------------------------------- */
 
-
 /* ---------------------------------------------------------------------------
 WARNING:
 * Be sure to have all ultrasound sensors plugged in, otherwise the pins may get stuck in
@@ -28,10 +27,20 @@ WARNING:
 #include "Maxbotix.h"
 
 // Number of encoder counts on tires
-// count tick on {FL, FR, BL, BR}
 // F = front, B = back, L = left, R = right
 volatile int FL_count = 0;
 volatile int FR_count = 0;
+volatile int BL_count = 0;
+volatile int BR_count = 0;
+
+// Set up ultrasound sensors
+// fr = front, bk = back, rt = right, lt = left
+/*
+Maxbotix us_fr(14, Maxbotix::PW, Maxbotix::LV); 
+Maxbotix us_bk(15, Maxbotix::PW, Maxbotix::LV);
+Maxbotix us_rt(16, Maxbotix::PW, Maxbotix::LV);
+Maxbotix us_lt(17, Maxbotix::PW, Maxbotix::LV);
+*/
 
 //encoder pins: pins 2,3 are hardware interrupts
 const int encPinA = 2;
@@ -46,86 +55,77 @@ const int motorPin = 10;
 const int servoPin = 11;
 int motorCMD;
 int servoCMD;
-const int noAction = 0;
 
-// Actuator constraints (servo)
-// Not sure if constraints should be active on motor as well
-int d_theta_max = 50;
-int theta_center = 90;
-int motor_neutral = 90;
-int theta_max = theta_center + d_theta_max;
-int theta_min = theta_center - d_theta_max;
-int motor_max = 120;
-int motor_min = 40;
+// max / min steering angle and motor commands
+int str_ang_max = 30;
+int str_ang_min = -30;
+int motor_max = 15;
+int motor_min = -15;
 
 // variable for time
 volatile unsigned long dt;
 volatile unsigned long t0;
 
-ros::NodeHandle nh;
-
-// define global message variables
-// Encoder, Electronic Control Unit, Ultrasound
-barc::Ultrasound ultrasound;
+// ROS node and message variable initialization
+ros::NodeHandle nh;                                         // create ros handle
+barc::Ultrasound ultrasound;                                // declare ROS message variables 
 barc::ECU ecu;
 barc::Encoder encoder;
-
-ros::Publisher pub_encoder("encoder", &encoder);
+ros::Publisher pub_encoder("encoder", &encoder);            // set up publishers
 ros::Publisher pub_ultrasound("ultrasound", &ultrasound);
 
-
 /**************************************************************************
-ESC COMMAND {MOTOR, SERVO} CALLBACK
+function    : ecu_callback
+purpose     : process the ecu commands from the odroid 
+parameters  :
+    * ecu message variable
+return 
+    * ecu message variable
 **************************************************************************/
-void messageCb(const barc::ECU& ecu){
-  // deconstruct esc message
-  motorCMD = saturateMotor( int(ecu.motor_pwm) );
-  servoCMD = saturateServo( int(ecu.servo_pwm) );
+/void ecu_callback(const barc::ECU& ecu){
+    // deconstruct esc message
+    motorCMD    = ecu.motor_pwm;
+    servoCMD    = ecu.servo_pwm;
+    
+    // saturate commands
+    motorCMD    = saturate(motorCMD, motor_min, motor_max);
+    servoCMD    = saturate(servoCMD, str_ang_min, str_ang_max);
 
-  // apply commands to motor and servo
-  motor.write( motorCMD );
-  steering.write(  servoCMD );
+    // apply commands to motor and servo
+    motor.write( motorCMD );
+    steering.write(  servoCMD );
 }
-// ECU := Engine Control Unit
-ros::Subscriber<barc::ECU> s("ecu", messageCb);
-
-// Set up ultrasound sensors
-/*
-Maxbotix us_fr(14, Maxbotix::PW, Maxbotix::LV); // front
-Maxbotix us_bk(15, Maxbotix::PW, Maxbotix::LV); // back
-Maxbotix us_rt(16, Maxbotix::PW, Maxbotix::LV); // right
-Maxbotix us_lt(17, Maxbotix::PW, Maxbotix::LV); // left
-*/
+ros::Subscriber<barc::ECU>sub_ecu("ecu", ecu_callback);
 
 /**************************************************************************
 ARDUINO INITIALIZATION
 **************************************************************************/
 void setup()
 {
-  // Set up encoder sensors
-  pinMode(encPinA, INPUT_PULLUP);
-  pinMode(encPinB, INPUT_PULLUP);
-  attachInterrupt(0, FL_inc, CHANGE); // args = (digitalPintoInterrupt, ISR, mode), mode set = {LOW, CHANGE, RISING, FALLING}, pin 0 = INT0, which is pin D2
-  attachInterrupt(1, FR_inc, CHANGE); //pin 1 = INT1, which is pin D3
+    // Set up encoder sensors
+    pinMode(encPinA, INPUT_PULLUP);
+    pinMode(encPinB, INPUT_PULLUP);
+    attachInterrupt(0, FL_inc, CHANGE); // args = (digitalPintoInterrupt, ISR, mode), mode set = {LOW, CHANGE, RISING, FALLING}
+                                        // pin 0 = INT0, which is pin D2
+    attachInterrupt(1, FR_inc, CHANGE);     //pin 1 = INT1, which is pin D3
 
-  // Set up actuators
-  motor.attach(motorPin);
-  steering.attach(servoPin);
+     // Set up actuators
+    motor.attach(motorPin);
+    steering.attach(servoPin);
 
     // Start ROS node
-  nh.initNode();
+    nh.initNode();
 
-  // Publish / Subscribe to topics
-  nh.advertise(pub_ultrasound);
-  nh.advertise(pub_encoder);
-  nh.subscribe(s);
+    // Publish / Subscribe to topics
+    nh.advertise(pub_ultrasound);
+    nh.advertise(pub_encoder);
+    nh.subscribe(sub_ecu);
 
-  // Arming ESC, 1 sec delay for arming and ROS
-  motor.write(theta_center);
-  steering.write(theta_center);
-  delay(1000);
-  t0 = millis();
-
+    // Arming ESC, 1 sec delay for arming and ROS
+    motor.write(theta_center);
+    steering.write(theta_center);
+    delay(1000);
+    t0 = millis();
 }
 
 
@@ -135,67 +135,80 @@ ARDUINO MAIN lOOP
 void loop()
 {
     // compute time elapsed (in ms)
-  dt = millis() - t0;
+    dt = millis() - t0;
 
-  // publish measurements
-  if (dt > 50) {
-    // publish encodeer measurement
+    // publish measurements
+    if (dt > 50) {
+        // publish encodeer measurement
+        encoder.FL = FL_count;
+        encoder.FR = FR_count;
+        encoder.BL = 0;
+        encoder.BR = 0;
+        pub_encoder.publish(&encoder);
 
-    encoder.FL = FL_count;
-    encoder.FR = FR_count;
-    encoder.BL = 0;
-    encoder.BR = 0;
-    pub_encoder.publish(&encoder);
+        // publish ultra-sound measurement
+        /*
+        ultrasound.front = us_fr.getRange();
+        ultrasound.back = us_bk.getRange();
+        ultrasound.right = us_rt.getRange();
+        ultrasound.left = us_lt.getRange();
+        */
+    
+        pub_ultrasound.publish(&ultrasound);
+        t0 = millis();
+    }
 
-    // publish ultra-sound measurement
-    /*
-    ultrasound.front = us_fr.getRange();
-    ultrasound.back = us_bk.getRange();
-    ultrasound.right = us_rt.getRange();
-    ultrasound.left = us_lt.getRange();
-    */
-    pub_ultrasound.publish(&ultrasound);
-    t0 = millis();
-  }
-
-  nh.spinOnce();
+    nh.spinOnce();
 }
 
 /**************************************************************************
-ENCODER COUNTERS
+function    : {FL,FR,BL,BR}_inc
+purpose     : increment the counter variable coming from the encoder sensor 
+parameters  : (none)
+return      : (none) 
 **************************************************************************/
 // increment the counters
 void FL_inc() { FL_count++; }
 void FR_inc() { FR_count++; }
+void BL_inc() { BL_count++; }
+void BR_inc() { BR_count++; }
 
 /**************************************************************************
-SATURATE MOTOR AND SERVO COMMANDS
+function    : saturate
+purpose     : saturate input commands to prevent sending values that are too high or too low
+parameters  : 
+    * u -  input motor command signal
+return 
+    * u_sat - saturated input signal 
 **************************************************************************/
-int saturateMotor(int x)
-{
-  if (x  == noAction ){ return motor_neutral; }
-
-  if (x  >  motor_max) {
-    x = motor_max;
-  }
-  else if (x < motor_min) {
-    x = motor_min;
-  }
-  return x;
+int saturate(float u, int u_min, int u_max){
+    if (u > u_max) { u = u_max; }
+    if (u < u_min) { u = u_min; }
+    return u;
 }
 
-int saturateServo(int x)
-{
+/**************************************************************************
+function    : ang2srv
+purpose     : convert desired vehicle steering angle [deg] to an PWM value for the arduino "motor" object
+parameters  : 
+    * ang - input angle [deg]
+return       
+    * pwm - servo pulse width modulation [pwm] signal 
+**************************************************************************/
+float ang2srv(float ang){
+    return 92.0558 + 1.8194*ang - 0.0104*ang*ang; 
+}
 
-  if (x  == noAction ){
-    return theta_center;
-  }
-
-  if (x  >  theta_max) {
-    x = theta_max;
-  }
-  else if (x < theta_min) {
-    x = theta_min;
-  }
-  return x;
+/**************************************************************************
+function    : motor_map
+purpose     : convert desired motor command to an PWM value for the arduino "motor" object
+parameters  : 
+    * u - motor command [int]
+return       
+    * u_pwm - motor pulse width modulation [pwm] signal 
+**************************************************************************/
+float motor_map(float u){
+    if(u == 0){ return 90; }
+    if(u > 0){ return u + 95} 
+    if(u < 0){ return 90;}
 }

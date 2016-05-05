@@ -57,10 +57,12 @@ int motorCMD;
 int servoCMD;
 
 // max / min steering angle and motor commands
-int str_ang_max = 30;
-int str_ang_min = -30;
-int motor_max = 15;
-int motor_min = -15;
+float str_ang_max   = 30;
+float str_ang_min   = -30;
+float motor_max     = 15;
+float motor_min     = -15;
+float d_f           = 0;
+float u_motor       = 0;
 
 // variable for time
 volatile unsigned long dt;
@@ -82,16 +84,20 @@ parameters  :
 return 
     * ecu message variable
 **************************************************************************/
-/void ecu_callback(const barc::ECU& ecu){
-    // deconstruct esc message
-    motorCMD    = ecu.motor_pwm;
-    servoCMD    = ecu.servo_pwm;
+void ecu_callback(const barc::ECU& ecu){
+    // deconstruct ecu message
+    u_motor     = ecu.motor_pwm;            // motor input
+    d_f         = ecu.servo_pwm;            // steering angle [deg]
     
     // saturate commands
-    motorCMD    = saturate(motorCMD, motor_min, motor_max);
-    servoCMD    = saturate(servoCMD, str_ang_min, str_ang_max);
+    u_motor     = saturate(u_motor, motor_min, motor_max);
+    d_f         = saturate(d_f, str_ang_min, str_ang_max);
 
-    // apply commands to motor and servo
+    // map commands
+    motorCMD    = round( motor_map(u_motor) );
+    servoCMD    = round( ang2srv(d_f) );
+
+    // apply commands
     motor.write( motorCMD );
     steering.write(  servoCMD );
 }
@@ -105,8 +111,8 @@ void setup()
     // Set up encoder sensors
     pinMode(encPinA, INPUT_PULLUP);
     pinMode(encPinB, INPUT_PULLUP);
-    attachInterrupt(0, FL_inc, CHANGE); // args = (digitalPintoInterrupt, ISR, mode), mode set = {LOW, CHANGE, RISING, FALLING}
-                                        // pin 0 = INT0, which is pin D2
+    attachInterrupt(0, FL_inc, CHANGE);     // args = (digitalPintoInterrupt, ISR, mode), mode set = {LOW, CHANGE, RISING, FALLING}
+                                            // pin 0 = INT0, which is pin D2
     attachInterrupt(1, FR_inc, CHANGE);     //pin 1 = INT1, which is pin D3
 
      // Set up actuators
@@ -122,8 +128,8 @@ void setup()
     nh.subscribe(sub_ecu);
 
     // Arming ESC, 1 sec delay for arming and ROS
-    motor.write(theta_center);
-    steering.write(theta_center);
+    motor.write( 90 );
+    steering.write( 90 );
     delay(1000);
     t0 = millis();
 }
@@ -181,7 +187,7 @@ parameters  :
 return 
     * u_sat - saturated input signal 
 **************************************************************************/
-int saturate(float u, int u_min, int u_max){
+float saturate(float u, float u_min, float u_max){
     if (u > u_max) { u = u_max; }
     if (u < u_min) { u = u_min; }
     return u;
@@ -209,6 +215,7 @@ return
 **************************************************************************/
 float motor_map(float u){
     if(u == 0){ return 90; }
-    if(u > 0){ return u + 95} 
+    if(u > 0){ return u + 95; } 
+    // NEED TO HANDLE NEGATIVE CASE FOR REVERSE
     if(u < 0){ return 90;}
 }

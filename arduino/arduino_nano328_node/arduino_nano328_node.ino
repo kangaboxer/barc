@@ -86,8 +86,8 @@ return
 **************************************************************************/
 void ecu_callback(const barc::ECU& ecu){
     // deconstruct ecu message
-    u_motor     = ecu.motor_pwm;            // motor input
-    d_f         = ecu.servo_pwm;            // steering angle [deg]
+    u_motor     = ecu.throttle;           // motor input
+    d_f         = ecu.str_ang;            // steering angle [deg]
     
     // saturate commands
     u_motor     = saturate(u_motor, motor_min, motor_max);

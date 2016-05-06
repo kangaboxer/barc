@@ -81,18 +81,18 @@ def main_auto():
     i 		= rospy.get_param("controller/i")
     d 		= rospy.get_param("controller/d")
     pid     = PID(P=p, I=i, D=d)
+    pid.setPoint(0)
 
     # main loop
     while not rospy.is_shutdown():
         # get steering wheel command
-        u         = pid.update(err, dt)
-        servoCMD  = angle_2_servo(u)
+        d_f             = pid.update(yaw, dt)
         
         # get command signal
-        (motorCMD, _) = test_mode(opt, rateHz, t_i)
+        (u_motor, _)    = test_mode(opt, rateHz, t_i)
 			
         # send command signal
-        ecu_cmd = ECU(motorCMD, servoCMD)
+        ecu         = ECU(u_motor, d_f)
         nh.publish(ecu_cmd)
 	
         # wait
@@ -102,7 +102,6 @@ def main_auto():
 #############################################################
 if __name__ == '__main__':
 	try:
-		
 		main_auto()
 	except rospy.ROSInterruptException:
 		pass

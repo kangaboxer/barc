@@ -41,30 +41,33 @@ y_ref   = 0
 # inputs: acceleration, steering angle 
 println("Creating kinematic bicycle model ....")
 mdl     = Model(solver = IpoptSolver(print_level=3))
-@defVar( mdl, x[1:(N+1)] )
-@defVar( mdl, y[1:(N+1)] )
-@defVar( mdl, psi[1:(N+1)] )
-@defVar( mdl, v[1:(N+1)] )
-@defVar( mdl, a[1:N] )
-@defVar( mdl, d_f[1:N] )
+@variable( mdl, x[1:(N+1)] , start = 0.0)
+@variable( mdl, y[1:(N+1)], start = 0.0)
+@variable( mdl, psi[1:(N+1)], start = 0.0 )
+@variable( mdl, v[1:(N+1)], start = 0.0 )
+@variable( mdl, a[1:N] )
+@variable( mdl, d_f[1:N] )
 
 # define objective function
-@setNLObjective(mdl, Min, (x[N+1] - x_ref)^2 + (y[N+1] - y_ref)^2 )
+@NLobjective(mdl, Min, (x[N+1] - x_ref)^2 + (y[N+1] - y_ref)^2 )
 
 # define constraints
 # define system dynamics
 # Reference: R.Rajamani, Vehicle Dynamics and Control, set. Mechanical Engineering Series,
 #               Spring, 2011, page 26
-@defNLParam(mdl, x0     == 0); @addNLConstraint(mdl, x[1]     == x0);
-@defNLParam(mdl, y0     == 0); @addNLConstraint(mdl, y[1]     == y0);
-@defNLParam(mdl, psi0   == 0); @addNLConstraint(mdl, psi[1]   == psi0 );
-@defNLParam(mdl, v0     == 0); @addNLConstraint(mdl, v[1]     == v0);
-@defNLExpr(mdl, bta[i = 1:N], atan( L_a / (L_a + L_b) * tan(d_f[i]) ) )
+# initial condition
+@NLparameter(mdl, x0     == 0); @NLconstraint(mdl, x[1]     == x0);
+@NLparameter(mdl, y0     == 0); @NLconstraint(mdl, y[1]     == y0);
+@NLparameter(mdl, psi0   == 0); @NLconstraint(mdl, psi[1]   == psi0 );
+@NLparameter(mdl, v0     == 0); @NLconstraint(mdl, v[1]     == v0);
+
+# model dynamics
+@NLexpression(mdl,  bta[i=1:N], atan( L_a / (L_a + L_b) * tan(d_f[i]) ) )
 for i in 1:N
-    @addNLConstraint(mdl, x[i+1]    == x[i]      + dt*(v[i]*cos( psi[i] + bta[i] ))  )
-    @addNLConstraint(mdl, y[i+1]    == y[i]      + dt*(v[i]*sin( psi[i] + bta[i] ))  )
-    @addNLConstraint(mdl, psi[i+1]  == psi[i]    + dt*(v[i]/L_b * sin(bta[i]))  )
-    @addNLConstraint(mdl, v[i+1]    == v[i]      + dt*(a[i])  )
+    @NLconstraint(mdl, x[i+1]    == x[i]      + dt*(v[i]*cos( psi[i] + bta[i] ))  )
+    @NLconstraint(mdl, y[i+1]    == y[i]      + dt*(v[i]*sin( psi[i] + bta[i] ))  )
+    @NLconstraint(mdl, psi[i+1]  == psi[i]    + dt*(v[i]/L_b * sin(bta[i]))  )
+    @NLconstraint(mdl, v[i+1]    == v[i]      + dt*(a[i])  )
 end
 
 # status update
@@ -74,10 +77,10 @@ println("finished initial solve!")
 
 function SE_callback(msg::Z_KinBkMdl)
     # update mpc initial condition 
-    setValue(x0,    msg.x)
-    setValue(y0,    msg.y)
-    setValue(psi0,  msg.psi)
-    setValue(v0,    msg.v)
+    setvalue(x0,    msg.x)
+    setvalue(y0,    msg.y)
+    setvalue(psi0,  msg.psi)
+    setvalue(v0,    msg.v)
 end
 
 function main()
@@ -92,8 +95,8 @@ function main()
         solve(mdl)
 
         # get optimal solutions
-        a_opt   = getValue(a[1])
-        d_f_opt = getValue(d_f[1])
+        a_opt   = getvalue(a[1])
+        d_f_opt = getvalue(d_f[1])
         # TO DO: transform to PWM signals
         cmd = ECU(a_opt, d_f_opt)
 

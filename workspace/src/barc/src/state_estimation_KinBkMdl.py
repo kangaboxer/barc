@@ -29,8 +29,6 @@ from rospy.numpy_msg import numpy_msg
 # input variables [default values]
 d_f 	    = 0         # steering angle [deg]
 a           = 0         # acceleration [m/s]
-servo_pwm   = 90
-motor_pwm   = 90
 
 # raw measurement variables
 (roll, pitch, yaw, a_x, a_y, a_z, w_x, w_y, w_z) = zeros(9)
@@ -49,16 +47,9 @@ dx_qrt 	    = 2.0*pi*r_tire/4.0     # distance along quarter tire edge [m]
 
 # ecu command update
 def ecu_callback(data):
-    global motor_pwm, servo_pwm, d_f, a
-    motor_pwm	    = data.motor_pwm
-    servo_pwm       = data.servo_pwm
-    d_f             = servo_2_angle(servo_pwm) * pi/180         # [rad]
-
-    # apply acceleration input
-    if a > 95:
-        a           = 0.3*(motor_pwm - 95)                          # TODO: need to build correct mapping
-    else:
-        a           = 0
+    global u_motor, d_f
+    u_moto      = data.throttle
+    d_f         = data.d_f
 
 # imu measurement update
 def imu_callback(data):
@@ -135,7 +126,6 @@ def state_estimation():
     R           = (r_std**2)*eye(2)     # measurement noise coveriance matrix
 
     while not rospy.is_shutdown():
-
 		# publish state estimate
         (x, y, psi, v) = z_EKF          
 

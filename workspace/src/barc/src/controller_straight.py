@@ -22,7 +22,6 @@ import serial
 from numpy import zeros, hstack, cos, array, dot, arctan, sign
 from numpy import unwrap
 from input_map import angle_2_servo, servo_2_angle
-from manuevers import TestSettings, CircularTest, Straight, SineSweep, DoubleLaneChange, CoastDown
 from pid import PID
 
 # pid control for constrant yaw angle 
@@ -48,6 +47,25 @@ def imu_callback(data):
 
     err = yaw - yaw0
 
+
+#############################################################
+def openloopMotor(t_i, t_f):
+    t_start     = 1
+
+    # rest
+    if t_i < t_start:
+        u_motor     = opt.neutral
+
+    # start moving
+    elif (t_i >= t_0) and (t_i < t_f):
+        u_motor     = opt.speed
+
+    # set straight and stop
+    else:
+        u_motor     = opt.neutral
+
+    return (u_motor, str_ang)
+
 #############################################################
 def main_auto():
     # initialize ROS node
@@ -57,29 +75,15 @@ def main_auto():
 
 	# set node rate
     rateHz  = 50
-    dt      = 1.0 / rateHz
     rate 	= rospy.Rate(rateHz)
-    t_i     = 0
+    dt      = 1.0 / rateHz
+    t_i     = 0.0
 
-    # specify test and test options
-    experiment_opt    = { 0 : CircularTest,
-                          1 : Straight,
-		    		      2 : SineSweep,   
-                          3 : DoubleLaneChange,
-					      4 : CoastDown}
-    experiment_sel 	= rospy.get_param("controller/experiment_sel")
-    v_x_pwm 	= rospy.get_param("controller/v_x_pwm")
-    t_0         = rospy.get_param("controller/t_0")
-    t_exp 		= rospy.get_param("controller/t_exp")
-    str_ang 	= rospy.get_param("controller/steering_angle")
-    test_mode   = experiment_opt.get(experiment_sel)
-    opt 	    = TestSettings(SPD = v_x_pwm, turn = str_ang, dt=t_exp)
-    opt.t_0    = t_0
-	
     # use simple pid control to keep steering straight
     p 		= rospy.get_param("controller/p")
     i 		= rospy.get_param("controller/i")
     d 		= rospy.get_param("controller/d")
+    t_f     = rospy.get_param("controller/t_f")
     pid     = PID(P=p, I=i, D=d)
     pid.setPoint(0)
 
@@ -87,16 +91,14 @@ def main_auto():
     while not rospy.is_shutdown():
         # get steering wheel command
         d_f             = pid.update(yaw, dt)
-        
-        # get command signal
-        (u_motor, _)    = test_mode(opt, rateHz, t_i)
+        u_motor         = openloopMotor(t_i, t_f)
 			
         # send command signal
         ecu         = ECU(u_motor, d_f)
         nh.publish(ecu_cmd)
 	
         # wait
-        t_i += 1
+        t_i += dt
         rate.sleep()
 
 #############################################################

@@ -33,7 +33,7 @@ dt      = 0.1           # time step of system
 N       = 5
 
 # define targets [generic values]
-x_ref   = 10
+x_ref   = 1
 y_ref   = 0
 
 # define decision variables 
@@ -68,6 +68,7 @@ for i in 1:N
     @NLconstraint(mdl, y[i+1]    == y[i]      + dt*(v[i]*sin( psi[i] + bta[i] ))  )
     @NLconstraint(mdl, psi[i+1]  == psi[i]    + dt*(v[i]/L_b * sin(bta[i]))  )
     @NLconstraint(mdl, v[i+1]    == v[i]      + dt*(a[i])  )
+    @NLconstraint(mdl, a[i]  <= 5 )
 end
 
 # status update
@@ -88,6 +89,11 @@ function main()
     init_node("mpc")
     pub = Publisher("ecu", ECU, queue_size=10)
     s1  = Subscriber("state_estimate", Z_KinBkMdl, SE_callback, queue_size=10)
+    
+    # get model parameters
+    b0      = get_param("state_estimation/input_gain")
+
+    # set rate
     loop_rate = Rate(10)
 
     while ! is_shutdown()
@@ -97,11 +103,13 @@ function main()
         # get optimal solutions
         a_opt   = getvalue(a[1])
         d_f_opt = getvalue(d_f[1])
-        # TO DO: transform to PWM signals
-        cmd = ECU(a_opt, d_f_opt)
 
-        # publish commands
+        # apply ecu command
+        u_motor = a_opt/b0            
+        cmd     = ECU(u_motor, d_f_opt)
         publish(pub, cmd)
+
+        # sleep
         rossleep(loop_rate)
     end
 end

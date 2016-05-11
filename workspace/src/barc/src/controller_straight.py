@@ -82,7 +82,7 @@ def main_auto():
     # initialize ROS node
     init_node('auto_mode', anonymous=True)
     Subscriber('imu/data', Imu, imu_callback)
-    nh = rospy.Publisher('ecu', ECU, queue_size = 10)
+    nh = Publisher('ecu', ECU, queue_size = 10)
 
 	# set node rate
     rateHz  = 50

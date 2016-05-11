@@ -22,6 +22,8 @@
         <!-- ekf properties -->
         <param name="q_std" type="double" value="0.1" />
         <param name="r_std" type="double" value="0.1" />
+
+        <param name="input_gain" type="double" value="0.4" />
     </node>
 
 

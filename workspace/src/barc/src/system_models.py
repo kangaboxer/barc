@@ -18,38 +18,7 @@ from numpy import sign, argmin, sqrt
 import rospy
 
 # discrete non-linear bicycle model dynamics
-def f_2s(z, u, vhMdl, trMdl, dt, v_x): 
-    """
-    process model
-    input: state z at time k, z[k] := [beta[k], r[k]], (i.e. slip angle and yaw rate)
-    output: state at next time step (k+1)
-    """
-    
-    # get states / inputs
-    beta    = z[0]
-    r       = z[1]
-    d_f     = u
-    
-    # extract parameters
-    (a,b,m,I_z) = vhMdl
-    (trMdlFront, trMdlRear) = trMdl
-
-    # comptue the front/rear slip  [rad/s]
-    # ref: Hindiyeh Thesis, p58
-    a_F     = arctan(beta + a*r/v_x) - d_f
-    a_R     = arctan(beta - b*r/v_x)
-
-    # compute tire force
-    FyF     = f_pajecka(trMdlFront, a_F)
-    FyR     = f_pajecka(trMdlRear, a_R)
-
-    # compute next state
-    beta_next   = beta  + dt*(-r + (1/(m*v_x))*(FyF*cos(d_f)+FyR))
-    r_next      = r    + dt/I_z*(a*FyF*cos(d_f) - b*FyR);
-    return array([beta_next, r_next])
-
-# discrete non-linear bicycle model dynamics
-def f_3s(z, u, vhMdl, trMdl, F_ext, dt): 
+def f_DynBkMdl_3s(z, u, vhMdl, trMdl, F_ext, dt): 
     """
     process model
     input: state z at time k, z[k] := [v_x[k], v_y[k], r[k]])
@@ -98,7 +67,7 @@ def f_3s(z, u, vhMdl, trMdl, F_ext, dt):
     return array([v_x_next, v_y_next, r_next])
 
 # discrete non-linear bicycle model dynamics 6-dof
-def f_6s(z, u, vhMdl, trMdl, F_ext, dt): 
+def f_DynBkMdl_6s(z, u, vhMdl, trMdl, F_ext, dt): 
     """
     process model
     input: state z at time k, z[k] := [X[k], Y[k], phi[k], v_x[k], v_y[k], r[k]])

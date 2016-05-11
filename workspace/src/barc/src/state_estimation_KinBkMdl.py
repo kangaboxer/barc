@@ -13,22 +13,20 @@
 # based on an open source project by Bruce Wootton
 # ---------------------------------------------------------------------------
 
-import rospy
-import time
-import os
+from rospy import init_node, Subscriber, Publisher, get_param
+from rospy import Rate, is_shutdown, ROSInterruptException
+from time import time
 from barc.msg import ECU, Encoder, Z_KinBkMdl
-from data_service.msg import TimeData
+from sensor_msgs.msg import Imu
 from numpy import pi, cos, sin, eye, array, zeros, unwrap
-from input_map import angle_2_servo, servo_2_angle
-from observers import kinematicLuembergerObserver, ekf
+from observers import ekf
 from system_models import f_KinBkMdl, h_KinBkMdl
 from filtering import filteredSignal
-from rospy_tutorials.msg import Floats
-from rospy.numpy_msg import numpy_msg
+from tf import transformations
 
 # input variables [default values]
 d_f 	    = 0         # steering angle [deg]
-a           = 0         # acceleration [m/s]
+u_motor     = 0         # motor input
 
 # raw measurement variables
 (roll, pitch, yaw, a_x, a_y, a_z, w_x, w_y, w_z) = zeros(9)
@@ -37,7 +35,7 @@ psi         = 0
 
 # from encoder
 v 	        = 0
-t0 	        = time.time()
+t0 	        = time()
 n_FL	    = 0                     # counts in the front left tire
 n_FR 	    = 0                     # counts in the front right tire
 n_FL_prev 	= 0
@@ -48,19 +46,30 @@ dx_qrt 	    = 2.0*pi*r_tire/4.0     # distance along quarter tire edge [m]
 # ecu command update
 def ecu_callback(data):
     global u_motor, d_f
-    u_moto      = data.throttle
+    u_motor     = data.throttle
     d_f         = data.d_f
 
 # imu measurement update
 def imu_callback(data):
     # units: [rad] and [rad/s]
     global roll, pitch, yaw, a_x, a_y, a_z, w_x, w_y, w_z
-    global yaw_prev, psi
-    (roll, pitch, yaw, a_x, a_y, a_z, w_x, w_y, w_z) = data.value
-    # unwrap angle measurements, since measurements wrap at plus/minus pi
-    yaw         = unwrap(array([yaw_prev, yaw]), discont = 2*pi)[1]
+    global yaw_prev
+    
+    # get orientation from quaternion data, and convert to roll, pitch, yaw
+    # extract angular velocity and linear acceleration data
+    ori         = data.orientation
+    quaternion  = (ori.x, ori.y, ori.z, ori.w)
+    (roll, pitch, yaw) = transformations.euler_from_quaternion(quaternion)
+    yaw         = unwrap(array([yaw_prev, yaw]), discont = pi)[1]
     yaw_prev    = yaw
-    psi         = yaw
+    
+    # extract angular velocity and linear acceleration data
+    w_x = data.angular_velocity.x
+    w_y = data.angular_velocity.y
+    w_z = data.angular_velocity.z
+    a_x = data.linear_acceleration.x
+    a_y = data.linear_acceleration.y
+    a_z = data.linear_acceleration.z
 
 # encoder measurement update
 def enc_callback(data):
@@ -71,7 +80,7 @@ def enc_callback(data):
 	n_FR = data.FR
 
 	# compute time elapsed
-	tf = time.time()
+	tf = time()
 	dt = tf - t0
 	
 	# if enough time elapse has elapsed, estimate v_x
@@ -85,37 +94,38 @@ def enc_callback(data):
 		# update old data
 		n_FL_prev   = n_FL
 		n_FR_prev   = n_FR
-		t0 	        = time.time()
+		t0 	        = time()
 
 
 # state estimation node
 def state_estimation():
 	# initialize node
-    rospy.init_node('state_estimation', anonymous=True)
+    init_node('state_estimation', anonymous=True)
 
     # topic subscriptions / publications
-    rospy.Subscriber('imu', TimeData, imu_callback)
-    rospy.Subscriber('encoder', Encoder, enc_callback)
-    rospy.Subscriber('ecu', ECU, ecu_callback)
-    state_pub 	= rospy.Publisher('state_estimate', Z_KinBkMdl, queue_size = 10)
+    Subscriber('imu/data', Imu, imu_callback)
+    Subscriber('encoder', Encoder, enc_callback)
+    Subscriber('ecu', ECU, ecu_callback)
+    state_pub 	= Publisher('state_estimate', Z_KinBkMdl, queue_size = 10)
 
 	# get vehicle dimension parameters
-    L_a = rospy.get_param("state_estimation/L_a")       # distance from CoG to front axel
-    L_b = rospy.get_param("state_estimation/L_b")       # distance from CoG to rear axel
-    vhMdl   = (L_a, L_b)
+    L_a         = get_param("state_estimation/L_a")       # distance from CoG to front axel
+    L_b         = get_param("state_estimation/L_b")       # distance from CoG to rear axel
+    b0      = get_param("state_estimation/input_gain")
+    vhMdl       = (L_a, L_b)
 
     # get encoder parameters
-    dt_vx   = rospy.get_param("state_estimation/dt_vx")     # time interval to compute v_x
+    dt_vx       = get_param("state_estimation/dt_vx")     # time interval to compute v_x
 
     # get EKF observer properties
-    q_std   = rospy.get_param("state_estimation/q_std")             # std of process noise
-    r_std   = rospy.get_param("state_estimation/r_std")             # std of measurementnoise
+    q_std       = get_param("state_estimation/q_std")             # std of process noise
+    r_std       = get_param("state_estimation/r_std")             # std of measurementnoise
 
 	# set node rate
     loop_rate 	= 50
     dt 		    = 1.0 / loop_rate
-    rate 		= rospy.Rate(loop_rate)
-    t0 			= time.time()
+    rate 		= Rate(loop_rate)
+    t0 			= time()
 
     # estimation variables for Luemberger observer
     z_EKF       = zeros(4) 
@@ -125,7 +135,7 @@ def state_estimation():
     Q           = (q_std**2)*eye(4)     # process noise coveriance matrix
     R           = (r_std**2)*eye(2)     # measurement noise coveriance matrix
 
-    while not rospy.is_shutdown():
+    while not is_shutdown():
 		# publish state estimate
         (x, y, psi, v) = z_EKF          
 
@@ -133,13 +143,12 @@ def state_estimation():
         state_pub.publish( Z_KinBkMdl(x, y, psi, v) )
 
         # collect measurements, inputs, system properties
-        # collect inputs
-        y   = array([psi, v])
-        u   = array([ d_f, a ])
-        args = (u,vhMdl,dt) 
+        y_meas  = array([psi, v])
+        u       = array([ d_f, b0*u_motor ])
+        args    = (u,vhMdl,dt) 
 
         # apply EKF and get each state estimate
-        (z_EKF,P) = ekf(f_KinBkMdl, z_EKF, P, h_KinBkMdl, y, Q, R, args )
+        (z_EKF,P) = ekf(f_KinBkMdl, z_EKF, P, h_KinBkMdl, y_meas, Q, R, args )
 
 		# wait
         rate.sleep()
@@ -147,5 +156,5 @@ def state_estimation():
 if __name__ == '__main__':
 	try:
 	   state_estimation()
-	except rospy.ROSInterruptException:
+	except ROSInterruptException:
 		pass

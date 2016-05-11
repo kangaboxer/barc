@@ -21,7 +21,7 @@ from sensor_msgs.msg import Imu
 from geometry_msgs.msg import Vector3
 from numpy import pi, cos, sin, eye, array, zeros
 from observers import ekf
-from system_models import f_3s, h_3s
+from system_models import f_DynBkMdl_3s, h_3s
 from filtering import filteredSignal
 from tf import transformations
 from numpy import unwrap
@@ -138,9 +138,10 @@ def state_estimation():
     mu      = get_param("state_estimation/mu")
     TrMdl   = ([B,C,mu],[B,C,mu])
 
-    # get external force model
+    # get vehicle model parameters
     a0      = get_param("state_estimation/air_drag_coeff")
-    Ff      = get_param("state_estimation/Ff")
+    b0      = get_param("state_estimation/input_gain")
+    Ff      = get_param("state_estimation/friction")
 
     # get EKF observer properties
     q_std   = get_param("state_estimation/q_std")             # std of process noise
@@ -181,7 +182,7 @@ def state_estimation():
         if v_x_est > v_x_min:
             # get measurement
             y       = array([v_x_est, w_z])
-            FxR     = 0.3*u_motor
+            FxR     = b0*u_motor
 
             # define input
             u       = array([ d_f, FxR ])
@@ -191,7 +192,7 @@ def state_estimation():
             args = (u, vhMdl, TrMdl, F_ext, dt) 
 
             # apply EKF and get each state estimate
-            (z_EKF,P) = ekf(f_3s, z_EKF, P, h_3s, y, Q, R, args )
+            (z_EKF,P) = ekf(f_DynBkMdl_3s, z_EKF, P, h_3s, y, Q, R, args )
         else:
             z_EKF[0] = float(v_x_enc)
             z_EKF[2] = float(w_z)

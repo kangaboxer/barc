@@ -29,7 +29,8 @@
 
         <!-- external force properties (air drag, friction) -->
         <param name="air_drag_coeff" type="double" value="0.1308" />
-        <param name="Ff" type="double" value="0.1711" />
+        <param name="input_gain" type="double" value="0.4" />
+        <param name="friction" type="double" value="0.1711" />
 
         <!-- low pass filter parameter -->
         <param name="p_filter" type="double" value="0.2" />

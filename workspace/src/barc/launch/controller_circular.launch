@@ -1,7 +1,8 @@
 <launch>
 	<!-- inertial measurement unit -->
-    <node pkg="barc" type="imu_data_acquisition.py" name="imu_node" >
+    <node pkg="myahrs_driver" type="myahrs_driver" name="myahrs_driver">
         <param name="port" value="/dev/ttyACM0" />
+        <param name="baud_rate" value="57600" />
     </node>
 
 	<!-- arduino nano -->

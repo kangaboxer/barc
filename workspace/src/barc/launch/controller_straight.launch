@@ -2,7 +2,7 @@
 	<!-- inertial measurement unit -->
     <node pkg="myahrs_driver" type="myahrs_driver" name="myahrs_driver">
         <param name="port" value="/dev/ttyACM0" />
-        <param name="baud_rate" value="115200" />
+        <param name="baud_rate" value="57600" />
     </node>
 
 	<!-- arduino nano -->

@@ -14,7 +14,7 @@
 	<node pkg="barc" type="controller_straight.py" name="controller" output="screen">
          <!-- PROPERTIES -->
         <param name="u_motor_target" type="int" value="2" />
-        <param name="t_0" type="double" value="2" />
+        <param name="t_0" type="double" value="1" />
         <param name="t_f" type="double" value="8" />
 		
         <!-- PID for straight test using imu gyro -->

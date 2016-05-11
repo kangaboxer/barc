@@ -14,14 +14,13 @@
 # ---------------------------------------------------------------------------
 
 import rospy
+import numpy as np
 from barc.msg import ECU
-from data_service.msg import TimeData
-from math import pi,sin
-import time
-import serial
-from numpy import zeros, hstack, cos, array, dot, arctan, sign
+from sensor_msgs.msg import Imu
+from math import pi
+from numpy import zeros, array
 from numpy import unwrap
-from input_map import angle_2_servo, servo_2_angle
+from tf import transformations
 from pid import PID
 
 # pid control for constrant yaw angle 
@@ -30,11 +29,20 @@ read_yaw0   = False
 yaw_prev    = 0      
 yaw         = 0
 err         = 0
-def imu_callback(data):
-    global yaw0, read_yaw0, yaw_prev, yaw, err
 
-    # extract yaw angle
-    (_,_,yaw, _,_,_, _,_,_) = data.value
+############################################################
+def imu_callback(data):
+    # units: [rad] and [rad/s]
+    global yaw0, read_yaw0, yaw_prev, yaw, err
+    global yaw_prev
+    
+    # get orientation from quaternion data, and convert to roll, pitch, yaw
+    # extract angular velocity and linear acceleration data
+    ori  = data.orientation
+    quaternion  = (ori.x, ori.y, ori.z, ori.w)
+    (roll, pitch, yaw) = transformations.euler_from_quaternion(quaternion)
+    yaw         = unwrap(array([yaw_prev, yaw]), discont = pi)[1]
+    yaw_prev    = yaw
 
     # save initial measurements
     if not read_yaw0:
@@ -45,60 +53,71 @@ def imu_callback(data):
         yaw         = temp[1]
         yaw_prev    = yaw
 
-    err = yaw - yaw0
-
-
 #############################################################
-def openloopMotor(t_i, t_f):
-    t_start     = 1
+def straight(rate, t_i, pid, time_params, u_motor_target):
+    # unpack parameters
+    (t_0, t_f, dt)  = time_params
 
     # rest
-    if t_i < t_start:
-        u_motor     = opt.neutral
+    if t_i < t_0:
+        d_f         = 0
+        u_motor     = 0
 
     # start moving
-    elif (t_i >= t_0) and (t_i < t_f):
-        u_motor     = opt.speed
+    elif (t_i < t_f):
+        d_f         = pid.update(yaw, dt)
+        step_up     = np.round( float(t_i - t_0) )
+        u_motor     = np.min([step_up, u_motor_target])
 
-    # set straight and stop
+    # stop experiment
     else:
-        u_motor     = opt.neutral
+        d_f         = 0
+        u_motor     = 0
 
-    return (u_motor, str_ang)
+    return (u_motor, d_f)
 
 #############################################################
 def main_auto():
     # initialize ROS node
     rospy.init_node('auto_mode', anonymous=True)
     nh = rospy.Publisher('ecu', ECU, queue_size = 10)
-    rospy.Subscriber('imu', TimeData, imu_callback)
+    rospy.Subscriber('imu/data', Imu, imu_callback)
 
 	# set node rate
     rateHz  = 50
     rate 	= rospy.Rate(rateHz)
     dt      = 1.0 / rateHz
-    t_i     = 0.0
 
-    # use simple pid control to keep steering straight
+    # get PID parameters
     p 		= rospy.get_param("controller/p")
     i 		= rospy.get_param("controller/i")
     d 		= rospy.get_param("controller/d")
-    t_f     = rospy.get_param("controller/t_f")
     pid     = PID(P=p, I=i, D=d)
-    pid.setPoint(0)
+    setReference    = False
+    
+    # get experiment parameters 
+    t_0             = rospy.get_param("controller/t_0")     # time to start test
+    t_f             = rospy.get_param("controller/t_f")     # time to end test
+    t_params        = (t_0, t_f, dt)
+    u_motor_target  =  rospy.get_param("controller/u_motor_target")
 
-    # main loop
     while not rospy.is_shutdown():
-        # get steering wheel command
-        d_f             = pid.update(yaw, dt)
-        u_motor         = openloopMotor(t_i, t_f)
-			
-        # send command signal
-        ecu         = ECU(u_motor, d_f)
-        nh.publish(ecu_cmd)
+
+        # OPEN LOOP 
+        if read_yaw0:
+            # set reference angle
+            if not setReference:
+                pid.setPoint(yaw0)
+                setReference    = True
+                t_i             = 0.0
+            # apply open loop command
+            else:
+                (u_motor, d_f)      = straight(rate, t_i, pid, t_params, u_motor_target)
+                ecu_cmd             = ECU(u_motor, d_f)
+                nh.publish(ecu_cmd)
+                t_i += dt
 	
         # wait
-        t_i += dt
         rate.sleep()
 
 #############################################################

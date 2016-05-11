@@ -13,8 +13,8 @@
 # based on an open source project by Bruce Wootton
 # ---------------------------------------------------------------------------
 
-import rospy
-import numpy as np
+from rospy import init_node, Subscriber, Publisher, get_param
+from rospy import Rate, is_shutdown, ROSInterruptException
 from barc.msg import ECU
 from sensor_msgs.msg import Imu
 from math import pi
@@ -22,6 +22,7 @@ from numpy import zeros, array
 from numpy import unwrap
 from tf import transformations
 from pid import PID
+import numpy as np
 
 # pid control for constrant yaw angle 
 yaw0        = 0      
@@ -54,7 +55,7 @@ def imu_callback(data):
         yaw_prev    = yaw
 
 #############################################################
-def straight(rate, t_i, pid, time_params, u_motor_target):
+def straight(t_i, pid, time_params, u_motor_target):
     # unpack parameters
     (t_0, t_f, dt)  = time_params
 
@@ -79,29 +80,29 @@ def straight(rate, t_i, pid, time_params, u_motor_target):
 #############################################################
 def main_auto():
     # initialize ROS node
-    rospy.init_node('auto_mode', anonymous=True)
+    init_node('auto_mode', anonymous=True)
+    Subscriber('imu/data', Imu, imu_callback)
     nh = rospy.Publisher('ecu', ECU, queue_size = 10)
-    rospy.Subscriber('imu/data', Imu, imu_callback)
 
 	# set node rate
     rateHz  = 50
-    rate 	= rospy.Rate(rateHz)
+    rate 	= Rate(rateHz)
     dt      = 1.0 / rateHz
 
     # get PID parameters
-    p 		= rospy.get_param("controller/p")
-    i 		= rospy.get_param("controller/i")
-    d 		= rospy.get_param("controller/d")
+    p 		= get_param("controller/p")
+    i 		= get_param("controller/i")
+    d 		= get_param("controller/d")
     pid     = PID(P=p, I=i, D=d)
     setReference    = False
     
     # get experiment parameters 
-    t_0             = rospy.get_param("controller/t_0")     # time to start test
-    t_f             = rospy.get_param("controller/t_f")     # time to end test
+    t_0             = get_param("controller/t_0")     # time to start test
+    t_f             = get_param("controller/t_f")     # time to end test
+    u_motor_target  = get_param("controller/u_motor_target")
     t_params        = (t_0, t_f, dt)
-    u_motor_target  =  rospy.get_param("controller/u_motor_target")
 
-    while not rospy.is_shutdown():
+    while not is_shutdown():
 
         # OPEN LOOP 
         if read_yaw0:
@@ -112,7 +113,7 @@ def main_auto():
                 t_i             = 0.0
             # apply open loop command
             else:
-                (u_motor, d_f)      = straight(rate, t_i, pid, t_params, u_motor_target)
+                (u_motor, d_f)      = straight(t_i, pid, t_params, u_motor_target)
                 ecu_cmd             = ECU(u_motor, d_f)
                 nh.publish(ecu_cmd)
                 t_i += dt
@@ -124,5 +125,5 @@ def main_auto():
 if __name__ == '__main__':
 	try:
 		main_auto()
-	except rospy.ROSInterruptException:
+	except ROSInterruptException:
 		pass

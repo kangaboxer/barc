@@ -18,12 +18,11 @@
         <param name="t_f" type="double" value="8" />
 		
         <!-- PID for straight test using imu gyro -->
-        <param name="p" type="double" value="40" />
-		<param name="i" type="double" value="5" />
+        <param name="p" type="double" value="1" />
+		<param name="i" type="double" value="1" />
 		<param name="d" type="double" value="0" />
    </node>
 
-    <!-- Record the experiment data -->
-    <node pkg="rosbag" type="record" name="rosbag_record" args=" --all" />
-
+	<!-- low level controller -->
+	<node pkg="barc" type="controller_low_level.py" name="LowLevelController"/>
 </launch>

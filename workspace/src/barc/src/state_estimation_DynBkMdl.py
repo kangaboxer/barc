@@ -75,12 +75,6 @@ def imu_callback(data):
     a_y = data.linear_acceleration.y
     a_z = data.linear_acceleration.z
 
-# optic flow update
-def optic_flow_callback(data):
-    global vx_optic,vy_optic
-    vx_optic = data.x
-    vy_optic = data.y
-
 # encoder measurement update
 def enc_callback(data):
 	global v_x_enc, d_f, t0
@@ -119,7 +113,6 @@ def state_estimation():
     Subscriber('imu/data', Imu, imu_callback)
     Subscriber('encoder', Encoder, enc_callback)
     Subscriber('ecu', ECU, ecu_callback)
-    Subscriber('vel_est', Vector3, optic_flow_callback)
     state_pub 	= Publisher('state_estimate', Vector3, queue_size = 10)
 
 	# get vehicle dimension parameters
@@ -162,10 +155,6 @@ def state_estimation():
     Q           = (q_std**2)*eye(3)     # process noise coveriance matrix
     R           = (r_std**2)*eye(2)     # measurement noise coveriance matrix
 
-    # filtered signal for longitudinal velocity
-    p_filter    = get_param("state_estimation/p_filter")
-    v_x_filt    = filteredSignal(a = p_filter, method='lp')   # low pass filter
-
     while not is_shutdown():
 
 		# publish state estimate
@@ -173,10 +162,6 @@ def state_estimation():
 
         # publish information
         state_pub.publish( Vector3(v_x, v_y, r) )
-
-        # update filtered signal
-        v_x_filt.update(v_x_enc)
-        v_x_est = v_x_filt.getFilteredSignal() 
 
         # apply EKF
         if v_x_est > v_x_min:
@@ -193,6 +178,7 @@ def state_estimation():
 
             # apply EKF and get each state estimate
             (z_EKF,P) = ekf(f_DynBkMdl_3s, z_EKF, P, h_3s, y, Q, R, args )
+
         else:
             z_EKF[0] = float(v_x_enc)
             z_EKF[2] = float(w_z)

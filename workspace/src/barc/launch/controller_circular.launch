@@ -19,7 +19,9 @@
         <param name="t_f" type="int" value="8" />
     </node>
 
+	<!-- low level controller -->
+	<node pkg="barc" type="controller_low_level.py" name="LowLevelController"/>
+
     <!-- Record the experiment data -->
     <node pkg="rosbag" type="record" name="rosbag_record" args=" --all" />
-
 </launch>

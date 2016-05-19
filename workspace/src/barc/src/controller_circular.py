@@ -16,6 +16,7 @@
 from rospy import init_node, Subscriber, Publisher, get_param
 from rospy import Rate, is_shutdown, ROSInterruptException
 from barc.msg import ECU
+from numpy import pi
 
 #############################################################
 def circular(t_i, t_0, t_f, d_f_target, u_motor_target):
@@ -46,13 +47,14 @@ def main_auto():
 	# set node rate
     rateHz  = 50
     rate 	= Rate(rateHz)
+    dt   	= 1.0 / rateHz
     t_i     = 0
 
     # get experiment parameters 
     t_0             = get_param("controller/t_0")     # time to start test
     t_f             = get_param("controller/t_f")     # time to end test
     u_motor_target  = get_param("controller/u_motor_target")
-    d_f_target      = get_param("controller/d_f_target")
+    d_f_target      = pi/180*get_param("controller/d_f_target")
  
     # main loop
     while not is_shutdown():
@@ -64,7 +66,7 @@ def main_auto():
         nh.publish(ecu_cmd)
 	
         # wait
-        t_i += 1
+        t_i += dt
         rate.sleep()
 
 #############################################################

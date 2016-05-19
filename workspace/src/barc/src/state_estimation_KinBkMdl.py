@@ -31,7 +31,9 @@ u_motor     = 0         # motor input
 # raw measurement variables
 (roll, pitch, yaw, a_x, a_y, a_z, w_x, w_y, w_z) = zeros(9)
 yaw_prev    = 0
-psi         = 0
+yaw0        = 0      
+read_yaw0   = False
+yaw_local   = 0
 
 # from encoder
 v 	        = 0
@@ -47,21 +49,30 @@ dx_qrt 	    = 2.0*pi*r_tire/4.0     # distance along quarter tire edge [m]
 def ecu_callback(data):
     global u_motor, d_f
     u_motor     = data.throttle
-    d_f         = data.d_f
+    d_f         = data.str_ang
 
 # imu measurement update
 def imu_callback(data):
     # units: [rad] and [rad/s]
     global roll, pitch, yaw, a_x, a_y, a_z, w_x, w_y, w_z
-    global yaw_prev
-    
+    global yaw_prev, yaw0, read_yaw0, yaw_local
+
     # get orientation from quaternion data, and convert to roll, pitch, yaw
     # extract angular velocity and linear acceleration data
     ori         = data.orientation
     quaternion  = (ori.x, ori.y, ori.z, ori.w)
     (roll, pitch, yaw) = transformations.euler_from_quaternion(quaternion)
+
+    # save initial measurements
+    if not read_yaw0:
+        read_yaw0   = True
+        yaw_prev    = yaw
+        yaw0        = yaw
+    
+    # unwrap measurement
     yaw         = unwrap(array([yaw_prev, yaw]), discont = pi)[1]
     yaw_prev    = yaw
+    yaw_local   = yaw - yaw0
     
     # extract angular velocity and linear acceleration data
     w_x = data.angular_velocity.x
@@ -111,7 +122,7 @@ def state_estimation():
 	# get vehicle dimension parameters
     L_a         = get_param("state_estimation/L_a")       # distance from CoG to front axel
     L_b         = get_param("state_estimation/L_b")       # distance from CoG to rear axel
-    b0      = get_param("state_estimation/input_gain")
+    b0          = get_param("state_estimation/input_gain")
     vhMdl       = (L_a, L_b)
 
     # get encoder parameters
@@ -137,13 +148,13 @@ def state_estimation():
 
     while not is_shutdown():
 		# publish state estimate
-        (x, y, psi, v) = z_EKF          
+        (x, y, psi, vel) = z_EKF          
 
         # publish information
-        state_pub.publish( Z_KinBkMdl(x, y, psi, v) )
+        state_pub.publish( Z_KinBkMdl(x, y, psi, vel) )
 
         # collect measurements, inputs, system properties
-        y_meas  = array([psi, v])
+        y_meas  = array([ yaw_local, v])
         u       = array([ d_f, b0*u_motor ])
         args    = (u,vhMdl,dt) 
 

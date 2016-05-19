@@ -57,12 +57,10 @@ int motorCMD;
 int servoCMD;
 
 // max / min steering angle and motor commands
-float str_ang_max   = 30;
-float str_ang_min   = -30;
-float motor_max     = 15;
-float motor_min     = -15;
-float d_f           = 0;
-float u_motor       = 0;
+float servo_min     = 70;
+float servo_max     = 120;
+float motor_min     = 70;
+float motor_max     = 120;
 
 // variable for time
 volatile unsigned long dt;
@@ -85,23 +83,15 @@ return
     * ecu message variable
 **************************************************************************/
 void ecu_callback(const barc::ECU& ecu){
-    // deconstruct ecu message
-    u_motor     = ecu.throttle;           // motor input
-    d_f         = ecu.str_ang;            // steering angle [deg]
-    
     // saturate commands
-    u_motor     = saturate(u_motor, motor_min, motor_max);
-    d_f         = saturate(d_f, str_ang_min, str_ang_max);
-
-    // map commands
-    motorCMD    = round( motor_map(u_motor) );
-    servoCMD    = round( ang2srv(d_f) );
+    motorCMD    = saturate(ecu.throttle, motor_min, motor_max);
+    servoCMD    = saturate(ecu.str_ang,  servo_min, servo_max);
 
     // apply commands
     motor.write( motorCMD );
     steering.write(  servoCMD );
 }
-ros::Subscriber<barc::ECU>sub_ecu("ecu", ecu_callback);
+ros::Subscriber<barc::ECU>sub_ecu("ecu_pwm", ecu_callback);
 
 /**************************************************************************
 ARDUINO INITIALIZATION
@@ -191,31 +181,4 @@ float saturate(float u, float u_min, float u_max){
     if (u > u_max) { u = u_max; }
     if (u < u_min) { u = u_min; }
     return u;
-}
-
-/**************************************************************************
-function    : ang2srv
-purpose     : convert desired vehicle steering angle [deg] to an PWM value for the arduino "motor" object
-parameters  : 
-    * ang - input angle [deg]
-return       
-    * pwm - servo pulse width modulation [pwm] signal 
-**************************************************************************/
-float ang2srv(float ang){
-    return 92.0558 + 1.8194*ang - 0.0104*ang*ang; 
-}
-
-/**************************************************************************
-function    : motor_map
-purpose     : convert desired motor command to an PWM value for the arduino "motor" object
-parameters  : 
-    * u - motor command [int]
-return       
-    * u_pwm - motor pulse width modulation [pwm] signal 
-**************************************************************************/
-float motor_map(float u){
-    if(u == 0){ return 90; }
-    if(u > 0){ return u + 95; } 
-    // NEED TO HANDLE NEGATIVE CASE FOR REVERSE
-    if(u < 0){ return 90;}
 }

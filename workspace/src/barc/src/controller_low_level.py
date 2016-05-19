@@ -23,24 +23,29 @@ import rospy
 ############################################################
 # [deg] -> [PWM]
 def angle_2_servo(x):
-    u   = 92.0558 + 1.8194*x  - 0.0104*x**2
+    x   *= 180/pi                               # convert from radians to degrees
+    u   = 92.0558 + 1.8194*x  - 0.0104*x**2     # convert from degrees to PWM angle
     return u
 
 ############################################################
 def ecu_callback(data, pub):
-    # unpack msg and convert to PWM instructions
-    u_motor     = data.throttle + 95
-    u_servo     = angle_2_servo( data.str_ang )
+    # unpack msg and convert to PWM angle instructions
+    u_motor     = data.throttle
+    if u_motor == 0:
+        motorCMD    = 90
+    else:
+        motorCMD    = 95 + u_motor
+    servoCMD    = angle_2_servo( data.str_ang )
 
     # publish low level commands to ECU
-    pub.publish( ECU(u_motor, u_servo) ) 
+    pub.publish( ECU(motorCMD, servoCMD) ) 
     
 #############################################################
 def main_auto():
     # initialize ROS node
     init_node('auto_mode', anonymous=True)
     pub = Publisher('ecu_pwm', ECU, queue_size = 10)
-    sub = Subscriber('ecu', ECU, (pub,), ecu_callback)
+    sub = Subscriber('ecu', ECU, ecu_callback, pub)
 
     # keep node alive
     spin()

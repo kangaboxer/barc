@@ -20,18 +20,27 @@ from math import pi
 import numpy as np
 import rospy
 
+############################################################
+# [deg] -> [PWM]
+def angle_2_servo(x):
+    u   = 92.0558 + 1.8194*x  - 0.0104*x**2
+    return u
 
 ############################################################
-def ecu_callback(data):
-    u_motor     = data.throttle 
-    u_servo     = data.str_ang
+def ecu_callback(data, pub):
+    # unpack msg and convert to PWM instructions
+    u_motor     = data.throttle + 95
+    u_servo     = angle_2_servo( data.str_ang )
+
+    # publish low level commands to ECU
+    pub.publish( ECU(u_motor, u_servo) ) 
     
 #############################################################
 def main_auto():
     # initialize ROS node
     init_node('auto_mode', anonymous=True)
-    Subscriber('ecu', ECU, ecu_callback)
-    nh = Publisher('ecu_pwm', ECU, queue_size = 10)
+    pub = Publisher('ecu_pwm', ECU, queue_size = 10)
+    sub = Subscriber('ecu', ECU, (pub,), ecu_callback)
 
     # keep node alive
     spin()

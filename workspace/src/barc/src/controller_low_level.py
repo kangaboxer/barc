@@ -23,6 +23,8 @@ import rospy
 
 ############################################################
 def ecu_callback(data):
+    u_motor     = data.throttle 
+    u_servo     = data.str_ang
     
 #############################################################
 def main_auto():

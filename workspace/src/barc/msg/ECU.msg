@@ -3,4 +3,4 @@
 # angles should be in degrees
 
 float32 throttle        # throttle
-float32 str_ang         # steering angle [deg]
+float32 str_ang         # steering angle [rad]
